@@ -10,9 +10,9 @@ export const generateToken = (userId, res) => {
     res.cookie("jwt", token, {
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         httpOnly: true,
-        sameSite: isProduction ? "none" : "lax",
-        secure: isProduction,
-        domain: isProduction ? ".onrender.com" : undefined
+        sameSite: "none",
+        secure: true,
+        path: "/"
     });
 
     return token;
