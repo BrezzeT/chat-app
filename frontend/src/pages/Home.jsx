@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useContext } from 'react';
+import { useEffect, useState, useCallback, useContext, useMemo } from 'react';
 import { 
     Box, 
     Container, 
@@ -42,13 +42,17 @@ const Home = () => {
     const socketConnection = useSocket(currentUser);
     const { socket, sendMessage, startTyping, stopTyping } = socketConnection;
 
+    // Memoize current chat ID
+    const currentChatId = useMemo(() => {
+        if (!currentUser?._id || !selectedUser?._id) return null;
+        return [currentUser._id, selectedUser._id].sort().join('-');
+    }, [currentUser?._id, selectedUser?._id]);
+
     const checkAuth = useCallback(async () => {
         try {
             const data = await apiCall('/api/auth/check');
             
-            // Update current user data
             setCurrentUser(prevUser => {
-                // Only update if data is different
                 if (!prevUser || 
                     prevUser.fullName !== data.fullName || 
                     prevUser.profilePic !== data.profilePic ||
@@ -60,19 +64,119 @@ const Home = () => {
             
             return true;
         } catch (error) {
-            toast({
-                title: 'Authentication Error',
-                description: error.message,
-                status: 'error',
-                duration: 3000,
-                isClosable: true
-            });
-            navigate('/login');
+            console.error('Auth check error:', error);
+            if (!error.message.includes('Network error')) {
+                toast({
+                    title: 'Authentication Error',
+                    description: error.message,
+                    status: 'error',
+                    duration: 3000,
+                    isClosable: true
+                });
+                navigate('/login');
+            }
             return false;
         } finally {
             setIsLoading(false);
         }
     }, [navigate, toast]);
+
+    // Optimized user fetch
+    const fetchUsers = useCallback(async () => {
+        if (!currentUser?._id) return;
+
+        try {
+            const data = await apiCall('/api/messages/users');
+            
+            setUsers(prevUsers => {
+                const prevSorted = _.sortBy(prevUsers, ['fullName']);
+                const newSorted = _.sortBy(data, ['fullName']);
+                
+                if (JSON.stringify(prevSorted) === JSON.stringify(newSorted)) {
+                    return prevUsers;
+                }
+                return data;
+            });
+        } catch (error) {
+            console.error('Fetch users error:', error);
+            if (error.message.includes('unauthorized') || error.message.includes('authentication')) {
+                navigate('/login');
+            } else if (!error.message.includes('Network error')) {
+                toast({
+                    title: 'Error',
+                    description: error.message,
+                    status: 'error',
+                    duration: 3000,
+                    isClosable: true
+                });
+            }
+        }
+    }, [currentUser?._id, navigate, toast]);
+
+    // Optimized message fetch
+    const fetchMessages = useCallback(async () => {
+        if (!selectedUser?._id || !currentUser?._id) return;
+
+        try {
+            const data = await apiCall(`/api/messages/${selectedUser._id}`);
+            
+            setMessages(prevMessages => {
+                const prevSorted = _.sortBy(prevMessages, ['createdAt']);
+                const newSorted = _.sortBy(data, ['createdAt']);
+                
+                if (JSON.stringify(prevSorted) === JSON.stringify(newSorted)) {
+                    return prevMessages;
+                }
+                return data;
+            });
+        } catch (error) {
+            console.error('Fetch messages error:', error);
+            if (!error.message.includes('Network error')) {
+                toast({
+                    title: 'Error',
+                    description: error.message,
+                    status: 'error',
+                    duration: 3000,
+                    isClosable: true
+                });
+            }
+        }
+    }, [selectedUser?._id, currentUser?._id, toast]);
+
+    // Handle socket events
+    useEffect(() => {
+        if (!socket || !currentChatId) return;
+
+        const handleNewMessage = (data) => {
+            if (data.message?.sender?._id === selectedUser?._id) {
+                fetchMessages();
+            } else {
+                fetchUsers(); // Update user list to show new message count
+            }
+        };
+
+        const handleUserOnline = ({ userId }) => {
+            setUserStatuses(prev => ({ ...prev, [userId]: true }));
+        };
+
+        const handleUserOffline = ({ userId }) => {
+            setUserStatuses(prev => ({ ...prev, [userId]: false }));
+        };
+
+        socket.on('message_received', handleNewMessage);
+        socket.on('user_online', handleUserOnline);
+        socket.on('user_offline', handleUserOffline);
+        
+        // Join chat room
+        socket.emit('join_chat', currentChatId);
+
+        return () => {
+            socket.off('message_received', handleNewMessage);
+            socket.off('user_online', handleUserOnline);
+            socket.off('user_offline', handleUserOffline);
+            socket.emit('leave_chat', currentChatId);
+        };
+    }, [socket, currentChatId, selectedUser?._id, fetchMessages, fetchUsers]);
 
     // Check authentication and get current user
     useEffect(() => {
@@ -110,47 +214,6 @@ const Home = () => {
         return () => window.removeEventListener('profile-updated', handleProfileUpdate);
     }, [handleProfileUpdate]);
 
-    // Fetch users with optimized interval
-    const fetchUsers = useCallback(async () => {
-        if (!currentUser?._id) return;
-
-        try {
-            const data = await apiCall('/api/messages/users');
-            
-            setUsers(prevUsers => {
-                // Only update if there are actual changes
-                if (JSON.stringify(prevUsers) !== JSON.stringify(data)) {
-                    return data;
-                }
-                return prevUsers;
-            });
-        } catch (error) {
-            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-                // Network error - might be server down
-                toast({
-                    title: 'Connection Error',
-                    description: 'Unable to connect to server. Please check your internet connection.',
-                    status: 'error',
-                    duration: 5000,
-                    isClosable: true
-                });
-            } else {
-                toast({
-                    title: 'Error',
-                    description: error.message,
-                    status: 'error',
-                    duration: 3000,
-                    isClosable: true
-                });
-            }
-
-            // If authentication error, redirect to login
-            if (error.message.includes('unauthorized') || error.message.includes('authentication')) {
-                navigate('/login');
-            }
-        }
-    }, [currentUser?._id, navigate, toast]);
-
     useEffect(() => {
         if (currentUser) {
             fetchUsers();
@@ -164,41 +227,6 @@ const Home = () => {
         }
     }, [currentUser, fetchUsers]);
 
-    // Fetch messages only when user is selected
-    const fetchMessages = useCallback(async () => {
-        if (!selectedUser?._id || !currentUser?._id) return;
-
-        try {
-            const data = await apiCall(`/api/messages/${selectedUser._id}`);
-            
-            setMessages(prevMessages => {
-                // Only update if there are actual changes
-                if (JSON.stringify(prevMessages) !== JSON.stringify(data)) {
-                    return data;
-                }
-                return prevMessages;
-            });
-        } catch (error) {
-            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-                toast({
-                    title: 'Connection Error',
-                    description: 'Unable to load messages. Please check your connection.',
-                    status: 'error',
-                    duration: 5000,
-                    isClosable: true
-                });
-            } else {
-                toast({
-                    title: 'Error',
-                    description: error.message,
-                    status: 'error',
-                    duration: 3000,
-                    isClosable: true
-                });
-            }
-        }
-    }, [selectedUser?._id, currentUser?._id, toast]);
-
     // Update messages when user is selected
     useEffect(() => {
         if (selectedUser?._id && currentUser?._id) {
@@ -207,74 +235,6 @@ const Home = () => {
             setMessages([]);
         }
     }, [selectedUser?._id, currentUser?._id, fetchMessages]);
-
-    // Socket connection and event handlers
-    useEffect(() => {
-        if (!socket || !currentUser?._id) return;
-
-        // Set up socket event handlers
-        const handleConnect = () => {
-            console.log('Socket connected');
-            // Refresh data on reconnection
-            fetchUsers();
-            if (selectedUser?._id) {
-                fetchMessages();
-            }
-        };
-
-        const handleDisconnect = () => {
-            console.log('Socket disconnected');
-        };
-
-        const handleError = (error) => {
-            console.error('Socket error:', error);
-        };
-
-        // Set up socket event listeners
-        socket.on('connect', handleConnect);
-        socket.on('disconnect', handleDisconnect);
-        socket.on('error', handleError);
-
-        // Clean up event listeners
-        return () => {
-            socket.off('connect', handleConnect);
-            socket.off('disconnect', handleDisconnect);
-            socket.off('error', handleError);
-        };
-    }, [socket, currentUser?._id, selectedUser?._id, fetchUsers, fetchMessages]);
-
-    // Handle real-time message updates through socket
-    useEffect(() => {
-        if (!socket) return;
-
-        const handleNewMessage = (data) => {
-            const { message } = data;
-            if (!message?.sender?._id) return;
-
-            setMessages(prev => {
-                // Check if message already exists
-                const exists = prev.some(msg => 
-                    msg._id === message._id || 
-                    (msg.sender._id === message.sender._id && 
-                     msg.message === message.message && 
-                     Math.abs(new Date(msg.createdAt) - new Date(message.createdAt)) < 1000)
-                );
-
-                if (exists) return prev;
-
-                // Add new message and sort by date
-                return [...prev, message].sort((a, b) => 
-                    new Date(a.createdAt) - new Date(b.createdAt)
-                );
-            });
-        };
-
-        socket.on('message_received', handleNewMessage);
-        
-        return () => {
-            socket.off('message_received', handleNewMessage);
-        };
-    }, [socket]);
 
     // Handle search results
     const handleSearch = useCallback((results) => {

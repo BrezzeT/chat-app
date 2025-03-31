@@ -11,11 +11,11 @@ import {
     Spinner,
     useColorModeValue,
 } from '@chakra-ui/react';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { FiSend } from 'react-icons/fi';
 import { format } from 'date-fns';
 import _ from 'lodash';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, IS_MOBILE } from '../config';
 
 const MessageContainer = ({
     selectedUser,
@@ -32,26 +32,35 @@ const MessageContainer = ({
     const toast = useToast();
     const typingTimeoutRef = useRef(null);
     const messageQueueRef = useRef([]);
+    const previousMessagesRef = useRef([]);
+
+    // Memoize processed messages
+    const processedMessages = useMemo(() => {
+        if (!Array.isArray(initialMessages)) return [];
+        
+        return initialMessages.map(msg => ({
+            ...msg,
+            sender: msg.sender || msg.senderId,
+            receiver: msg.receiver || msg.receiverId,
+            _id: msg._id || `temp-${Date.now()}-${Math.random()}`,
+            createdAt: msg.createdAt || new Date().toISOString()
+        }));
+    }, [initialMessages]);
 
     // Update messages when initialMessages changes
     useEffect(() => {
         if (!Array.isArray(initialMessages)) return;
         
         setMessages(prevMessages => {
-            const processedMessages = initialMessages.map(msg => ({
-                ...msg,
-                sender: msg.sender || msg.senderId,
-                receiver: msg.receiver || msg.receiverId,
-                _id: msg._id || `temp-${Date.now()}-${Math.random()}`,
-                createdAt: msg.createdAt || new Date().toISOString()
-            }));
-
             // Compare with previous messages to avoid unnecessary updates
-            const prevMessagesStr = JSON.stringify(prevMessages);
+            const prevMessagesStr = JSON.stringify(previousMessagesRef.current);
             const newMessagesStr = JSON.stringify(processedMessages);
             if (prevMessagesStr === newMessagesStr) {
                 return prevMessages;
             }
+
+            // Update previous messages reference
+            previousMessagesRef.current = processedMessages;
 
             // Merge with queued messages and remove duplicates
             const allMessages = [...processedMessages, ...messageQueueRef.current];
@@ -59,15 +68,18 @@ const MessageContainer = ({
                 msg._id === 'temp' ? msg.message + msg.createdAt : msg._id
             ).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
         });
-    }, [initialMessages]);
+    }, [processedMessages]);
 
-    // Debounced scroll to bottom
+    // Optimized scroll to bottom
     const scrollToBottom = useCallback(
         _.debounce(() => {
             if (messagesEndRef.current) {
-                messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+                messagesEndRef.current.scrollIntoView({ 
+                    behavior: IS_MOBILE ? 'auto' : 'smooth',
+                    block: 'end'
+                });
             }
-        }, 100),
+        }, IS_MOBILE ? 0 : 100),
         []
     );
 
@@ -76,13 +88,13 @@ const MessageContainer = ({
         scrollToBottom();
     }, [messages, scrollToBottom]);
 
-    // Debounced typing handler
+    // Optimized typing handler
     const handleTyping = useCallback(
         _.debounce(() => {
             if (socket && selectedUser?._id && onTyping) {
                 onTyping();
             }
-        }, 300),
+        }, 500),
         [socket, selectedUser?._id, onTyping]
     );
 
@@ -91,6 +103,8 @@ const MessageContainer = ({
         return () => {
             handleTyping.cancel();
             scrollToBottom.cancel();
+            messageQueueRef.current = [];
+            previousMessagesRef.current = [];
         };
     }, [handleTyping, scrollToBottom]);
 
@@ -113,13 +127,11 @@ const MessageContainer = ({
                 if (exists) return prev;
 
                 // Add new message and sort by date
-                const newMessages = [...prev, {
+                return [...prev, {
                     ...message,
                     _id: message._id || `temp-${Date.now()}-${Math.random()}`,
                     createdAt: message.createdAt || new Date().toISOString()
                 }].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
-                return newMessages;
             });
         };
 
@@ -155,17 +167,19 @@ const MessageContainer = ({
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    ...(IS_MOBILE ? {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    } : {})
                 },
-                credentials: 'include',
+                credentials: IS_MOBILE ? 'omit' : 'include',
                 body: JSON.stringify({ message: messageText }),
             });
 
+            const data = await res.json();
             if (!res.ok) {
-                const data = await res.json();
                 throw new Error(data.error || 'Failed to send message');
             }
-
-            const data = await res.json();
 
             // Remove temporary message and add real one
             messageQueueRef.current = messageQueueRef.current.filter(
@@ -198,7 +212,6 @@ const MessageContainer = ({
             if (onMessageSent) {
                 onMessageSent(newMessage);
             }
-
         } catch (error) {
             console.error('Error sending message:', error);
             
@@ -211,7 +224,7 @@ const MessageContainer = ({
                 isClosable: true,
             });
 
-            // Remove temporary message on error
+            // Remove temporary message
             messageQueueRef.current = messageQueueRef.current.filter(
                 msg => msg._id !== tempMessage._id
             );
