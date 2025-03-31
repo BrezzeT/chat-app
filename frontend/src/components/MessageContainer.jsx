@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { FiSend } from 'react-icons/fi';
 import { format } from 'date-fns';
 import _ from 'lodash';
+import { API_BASE_URL } from '../config';
 
 const MessageContainer = ({
     selectedUser,
@@ -150,7 +151,7 @@ const MessageContainer = ({
 
         try {
             setLoading(true);
-            const res = await fetch(`/api/messages/send/${selectedUser._id}`, {
+            const res = await fetch(`${API_BASE_URL}/api/messages/send/${selectedUser._id}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -159,8 +160,12 @@ const MessageContainer = ({
                 body: JSON.stringify({ message: messageText }),
             });
 
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to send message');
+            }
+
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to send message');
 
             // Remove temporary message and add real one
             messageQueueRef.current = messageQueueRef.current.filter(
@@ -195,25 +200,30 @@ const MessageContainer = ({
             }
 
         } catch (error) {
-            // Remove temporary message on error
-            messageQueueRef.current = messageQueueRef.current.filter(
-                msg => msg._id !== tempMessage._id
-            );
-            setMessages(prev => prev.filter(msg => msg._id !== tempMessage._id));
-
-            // Show error and restore message in input
-            setMessage(messageText);
+            console.error('Error sending message:', error);
+            
+            // Show error toast
             toast({
                 title: 'Error sending message',
-                description: error.message,
+                description: error.message || 'Please try again',
                 status: 'error',
                 duration: 3000,
                 isClosable: true,
             });
+
+            // Remove temporary message on error
+            messageQueueRef.current = messageQueueRef.current.filter(
+                msg => msg._id !== tempMessage._id
+            );
+            
+            setMessages(prev => prev.filter(msg => msg._id !== tempMessage._id));
+            
+            // Restore message in input
+            setMessage(messageText);
         } finally {
             setLoading(false);
         }
-    }, [message, selectedUser?._id, currentUser?._id, socket, onMessageSent, toast]);
+    }, [message, selectedUser?._id, currentUser?._id, socket, toast, onMessageSent]);
 
     const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
