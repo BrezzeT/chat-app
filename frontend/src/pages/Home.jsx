@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useContext } from 'react';
 import { 
     Box, 
     Container, 
@@ -20,6 +20,7 @@ import SearchBar from '../components/SearchBar';
 import SettingsModal from '../components/SettingsModal';
 import { useDisclosure } from '@chakra-ui/react';
 import _ from 'lodash';
+import { apiCall } from '../config';
 
 const Home = () => {
     const [selectedUser, setSelectedUser] = useState(null);
@@ -37,18 +38,13 @@ const Home = () => {
     const { isOpen: isSidebarOpen, onOpen: onSidebarOpen, onClose: onSidebarClose } = useDrawer({ defaultIsOpen: true });
     const isMobile = useBreakpointValue({ base: true, md: false });
 
-    const { socket, sendMessage, startTyping, stopTyping } = useSocket(currentUser);
+    // Initialize socket connection
+    const socketConnection = useSocket(currentUser);
+    const { socket, sendMessage, startTyping, stopTyping } = socketConnection;
 
     const checkAuth = useCallback(async () => {
         try {
-            const res = await fetch('/api/auth/check', {
-                credentials: 'include'
-            });
-            const data = await res.json();
-            
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to authenticate');
-            }
+            const data = await apiCall('/api/auth/check');
             
             // Update current user data
             setCurrentUser(prevUser => {
@@ -119,14 +115,7 @@ const Home = () => {
         if (!currentUser?._id) return;
 
         try {
-            const res = await fetch('/api/messages/users', {
-                credentials: 'include'
-            });
-            const data = await res.json();
-            
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to fetch users');
-            }
+            const data = await apiCall('/api/messages/users');
             
             setUsers(prevUsers => {
                 // Only update if there are actual changes
@@ -180,14 +169,7 @@ const Home = () => {
         if (!selectedUser?._id || !currentUser?._id) return;
 
         try {
-            const res = await fetch(`/api/messages/${selectedUser._id}`, {
-                credentials: 'include'
-            });
-            const data = await res.json();
-            
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to fetch messages');
-            }
+            const data = await apiCall(`/api/messages/${selectedUser._id}`);
             
             setMessages(prevMessages => {
                 // Only update if there are actual changes
@@ -214,9 +196,6 @@ const Home = () => {
                     isClosable: true
                 });
             }
-
-            // Keep existing messages on error
-            // setMessages([]);
         }
     }, [selectedUser?._id, currentUser?._id, toast]);
 

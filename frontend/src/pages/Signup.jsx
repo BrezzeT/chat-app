@@ -18,6 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FiEye, FiEyeOff, FiUpload } from 'react-icons/fi';
 import AuthBackground from '../components/AuthBackground';
+import { apiCall } from '../config';
 
 const MotionBox = motion(Box);
 
@@ -57,15 +58,11 @@ const Signup = () => {
 
         setLoading(true);
         try {
-            const res = await fetch("/api/auth/signup", {
+            await apiCall("/api/auth/signup", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ fullName, email, password, profilePic })
             });
-            const data = await res.json();
-            if (data.error) {
-                throw new Error(data.error);
-            }
+            
             toast({
                 title: "Account created successfully",
                 status: "success",

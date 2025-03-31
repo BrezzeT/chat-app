@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { useToast } from '@chakra-ui/react';
-
-const SOCKET_SERVER_URL = 'http://localhost:5000';
+import { API_BASE_URL } from '../config';
 
 export const useSocket = (currentUser) => {
     const socket = useRef(null);
@@ -12,8 +11,11 @@ export const useSocket = (currentUser) => {
         if (!currentUser?._id) return;
 
         // Initialize socket connection
-        const socketInstance = io(SOCKET_SERVER_URL, {
+        const socketInstance = io(API_BASE_URL, {
             withCredentials: true,
+            transports: ['websocket', 'polling'],
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
         });
 
         // Connection event handlers

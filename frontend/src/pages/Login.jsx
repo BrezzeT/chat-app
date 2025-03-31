@@ -17,6 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
 import AuthBackground from '../components/AuthBackground';
+import { apiCall } from '../config';
 
 const MotionBox = motion(Box);
 
@@ -32,15 +33,11 @@ const Login = () => {
         e.preventDefault();
         setLoading(true);
         try {
-            const res = await fetch("/api/auth/login", {
+            await apiCall("/api/auth/login", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password })
             });
-            const data = await res.json();
-            if (data.error) {
-                throw new Error(data.error);
-            }
+            
             toast({
                 title: "Login successful",
                 status: "success",

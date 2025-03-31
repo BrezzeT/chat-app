@@ -22,6 +22,7 @@ import { FiLogOut, FiUser, FiSettings, FiMoreVertical } from 'react-icons/fi';
 import { format } from 'date-fns';
 import UserProfileModal from './UserProfileModal';
 import { useState } from 'react';
+import { apiCall } from '../config';
 
 const Sidebar = ({
     users,
@@ -46,13 +47,9 @@ const Sidebar = ({
 
     const handleLogout = async () => {
         try {
-            const res = await fetch("/api/auth/logout", {
-                method: "POST",
-                credentials: 'include'
+            await apiCall("/api/auth/logout", {
+                method: "POST"
             });
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
-            
             navigate("/login");
         } catch (error) {
             toast({
@@ -67,15 +64,7 @@ const Sidebar = ({
 
     const handleViewProfile = async (userId) => {
         try {
-            const res = await fetch(`/api/auth/profile/${userId}`, {
-                credentials: 'include'
-            });
-            const data = await res.json();
-            
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to fetch profile');
-            }
-
+            const data = await apiCall(`/api/auth/profile/${userId}`);
             setSelectedProfile(data);
             onOpen();
         } catch (error) {
@@ -91,15 +80,9 @@ const Sidebar = ({
 
     const handleClearChat = async (userId) => {
         try {
-            const res = await fetch(`/api/auth/chat/${userId}`, {
-                method: 'DELETE',
-                credentials: 'include'
+            await apiCall(`/api/auth/chat/${userId}`, {
+                method: 'DELETE'
             });
-            const data = await res.json();
-            
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to clear chat');
-            }
 
             toast({
                 title: 'Chat Cleared',
@@ -131,15 +114,9 @@ const Sidebar = ({
 
     const handleBlockUser = async (userId) => {
         try {
-            const res = await fetch(`/api/auth/block/${userId}`, {
-                method: 'POST',
-                credentials: 'include'
+            await apiCall(`/api/auth/block/${userId}`, {
+                method: 'POST'
             });
-            const data = await res.json();
-            
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to block user');
-            }
 
             toast({
                 title: 'User Blocked',

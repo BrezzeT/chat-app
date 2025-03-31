@@ -17,6 +17,7 @@ import {
 import { motion } from 'framer-motion';
 import { FiUpload, FiSave, FiArrowLeft } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
+import { apiCall } from '../config';
 
 const MotionBox = motion(Box);
 
@@ -34,12 +35,7 @@ const Profile = () => {
 
     const fetchUserProfile = async () => {
         try {
-            const res = await fetch("/api/auth/check", {
-                credentials: 'include'
-            });
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
-            
+            const data = await apiCall("/api/auth/check");
             setUser(data);
             setFullName(data.fullName);
             setProfilePic(data.profilePic);
@@ -86,14 +82,10 @@ const Profile = () => {
             const formData = new FormData();
             formData.append('profilePic', file);
 
-            const res = await fetch("/api/auth/upload-image", {
+            const data = await apiCall("/api/auth/upload-image", {
                 method: "POST",
-                credentials: 'include',
                 body: formData
             });
-
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
 
             setProfilePic(data.imageUrl);
             toast({
@@ -130,22 +122,12 @@ const Profile = () => {
         setLoading(true);
 
         try {
-            const res = await fetch('/api/auth/update-profile', {
+            const data = await apiCall('/api/auth/update-profile', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'include',
                 body: JSON.stringify({
                     fullName: fullName.trim(),
                 }),
             });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to update profile');
-            }
 
             // Update local user state
             setUser(data);
